@@ -3,7 +3,7 @@ pareto_search.py
 primary multi-objective Pareto-front search. requires tensor_builder.py
 
 to call:
-from pareto_search import pareto_search
+from pareto_search import pareto_search, time_matrix, cost_matrix, node_index
 
 result = pareto_search(time_matrix, cost_matrix, "A", "J", node_index)  # any valid source/destination node pair
 result["candidates"]       # every simple path found, with time/cost
@@ -11,8 +11,8 @@ result["pareto_front"]     # Task 4 answer (non-dominated routes)
 result["fastest_route"]    # fastest route on the Pareto front
 result["cheapest_route"]   # cheapest route on the Pareto front
 
-time_matrix, cost_matrix, node_index come from tensor_builder.build_adjacency_matrices(NODES, EDGES)
-"""    
+time_matrix, cost_matrix, node_index are already built from tensor_builder.NODES / EDGES at import time
+"""
 
 from __future__ import annotations
 import numpy as np
