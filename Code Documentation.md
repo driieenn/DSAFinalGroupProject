@@ -1,360 +1,286 @@
 # Code Documentation
-## Multi-Objective Network Optimization — LT6 Final Project
 
-This document describes, module by module and function by function, how the codebase
-implements the design described in the project proposal: graph/tensor representation,
-single-objective Dijkstra-style optimization, Pareto-based multi-objective search, and
-brute-force ground truth testing.
+This document describes every section in the project, its role, and its major
+functions/classes. It's meant to be read alongside the source — every
+function below also carries a docstring and inline comments in the code
+itself; this file adds the cross-module context (what calls what, why a
+function exists, which task it satisfies).
+
+**Module role summary:**
+
+| Module | Role |
+|---|---|
+| `tensor_builder.py` | Data structures — builds the graph's matrices/tensor |
+| `dijkstra_search.py` | **Main algorithm** — single-objective shortest path |
+| `pareto_search.py` | **Main algorithm** — multi-objective Pareto-front search |
+| `ground_truth_generator.py` | **Testing utility only** — brute-force oracle, not used in production output |
+| `main.py` | Demo runner — wires the above together, no algorithm logic |
+| `tests/test_project.py` | Automated tests |
 
 ---
 
-## 1. `tensor_builder.py`
+## `tensor_builder.py` — Task 1/2: Graph & Tensor Representation
 
-**Purpose:** Build the graph's data structures — two weighted adjacency matrices (time,
-cost) and a combined tensor — from a node list and an edge list. This is the foundation
-every other module (Dijkstra, Pareto search, ground truth) is built on top of.
+Builds the directed, dual-weighted network into matrix form. Pure data
+structure code; contains no pathfinding logic.
 
-### Constants
-- `INF = float("inf")` — sentinel meaning "no direct edge between these two nodes."
-- `NODES` — the fixed, ordered list of node labels (`["A", "B", ..., "J"]`). The position of
-  a node in this list determines its row/column index in every matrix.
-- `EDGES` — the list of `(source, destination, time_value, cost_value)` tuples that defines
-  the base graph. The graph is **directed**: an edge `A -> B` does not imply `B -> A`.
+### Module-level data
+- **`INF`** — `float("inf")`. Used to represent "no direct edge" in a matrix
+  cell, as opposed to `0`, which is reserved for a node's distance to itself.
+- **`NODES`** — the fixed, ordered list `["A", ..., "J"]`. The list's index
+  order determines the row/column order of every matrix built from it.
+- **`EDGES`** — the fixed edge list as `(source, destination, time, cost)`
+  tuples, taken directly from the finalized network design.
 
-### `build_node_index(nodes: list) -> dict`
-Maps each node label to its integer index (`"A" -> 0, "B" -> 1, ...`). Used everywhere a
-node label needs to be converted into a matrix row/column.
+### `build_node_index(nodes) -> dict[str, int]`
+Maps each node label to its integer row/column index (e.g. `{"A": 0, "B": 1,
+...}`). Every other function that needs to go from a label to a matrix
+position uses this mapping.
 
-### `validate_edges(nodes: list, edges: list) -> None`
-Defensive check run before building any matrix. Raises `ValueError` if:
-- an edge references a node that isn't in `nodes`, or
-- an edge has a negative time or cost value (Dijkstra requires non-negative weights).
+### `validate_edges(nodes, edges) -> None`
+Defensive check run before matrix construction. Raises `ValueError` if an
+edge references a node that isn't in `nodes`, or if a time/cost value is
+negative (negative weights would break the non-negative-weight assumption
+that Dijkstra's algorithm depends on).
 
 ### `build_adjacency_matrices(nodes=NODES, edges=EDGES) -> (time_matrix, cost_matrix, node_index)`
-1. Validates the edge list.
-2. Creates two `N × N` NumPy arrays filled with `INF` (meaning "no edge").
-3. Sets the diagonal to `0` (a node's distance to itself).
-4. For every edge `(src, dst, t, c)`, sets `time_matrix[src][dst] = t` and
-   `cost_matrix[src][dst] = c`.
+The core builder. For an N-node graph, returns two N×N `numpy` arrays:
+- `time_matrix[i][j]` = time weight of the edge `i -> j`, or `INF` if no such
+  edge exists.
+- `cost_matrix[i][j]` = the same, for cost.
+- The diagonal of both matrices is `0` (a node's "distance" to itself).
 
-Returns the two matrices plus the `node_index` dictionary so callers can translate labels
-to indices.
+Because the graph is **directed**, `matrix[i][j]` and `matrix[j][i]` are
+independent — an edge one way does not imply an edge the other way.
 
 ### `build_tensor(time_matrix, cost_matrix) -> np.ndarray`
-Stacks the two matrices into a single tensor of shape `(2, N, N)` using `np.stack`.
-- `tensor[0]` = time matrix (objective 0)
-- `tensor[1]` = cost matrix (objective 1)
+Stacks the two matrices with `np.stack` into one `(2, N, N)` array, so
+`tensor[0]` is the time matrix and `tensor[1]` is the cost matrix. This is
+the literal "vector of objective values per edge" representation described
+in the project proposal — indexing `tensor[:, i, j]` gives the full
+`[time, cost]` objective vector for edge `i -> j`.
 
-This is the literal implementation of the proposal's idea that "each edge is no longer a
-single weight, but a vector of objective values" — indexing `tensor[:, i, j]` gives the full
-`[time, cost]` vector for the edge `i -> j`.
-
-### `get_neighbors(matrix, node, node_index, nodes=NODES) -> list[(neighbor, weight)]`
-Given **any one** objective matrix (time or cost), returns the outgoing neighbors of `node`
-and the edge weight to each. Skips entries equal to `INF` (no edge) or `0` (self). This is
-the shared building block used by both the Dijkstra optimizer and the Pareto route
-generator — whichever matrix you pass in decides which objective is being explored.
+### `get_neighbors(matrix, node, node_index, nodes=NODES) -> list[tuple[str, float]]`
+Given one objective matrix (time *or* cost) and a node, returns that node's
+outgoing neighbors and edge weights, skipping `INF` (no edge) and `0`
+(self-loop) entries. Shared helper used by both `dijkstra_search.py` and
+`pareto_search.py`'s route generation.
 
 ### `print_matrix(matrix, title) -> None`
-Debug/demo helper that prints a labeled matrix row by row.
+Pretty-prints a matrix with a title/underline. Display-only, no return value.
 
 ---
 
-## 2. Single-Objective Optimizer — `dijkstra()` (developed in the notebook)
+## `dijkstra_search.py` — Task 3: Single-Objective Optimizer (MAIN algorithm)
+
+Answers "what's the best route for *one* objective at a time?" The same
+function works for time or cost — the objective is determined entirely by
+which matrix you pass in.
+
+### Module-level data
+`time_matrix`, `cost_matrix`, `node_index` are pre-built at import time from
+`tensor_builder.NODES`/`EDGES`, so other files can `from dijkstra_search
+import time_matrix, cost_matrix, node_index` without rebuilding the graph.
 
 ### `dijkstra(matrix, source, target, node_index, nodes=NODES) -> (path, total_cost)`
-A manual, from-scratch implementation of Dijkstra's algorithm using the exact components
-called for in the proposal:
+The primary algorithm. A manually implemented Dijkstra's algorithm using
+exactly the four components specified by the project plan:
 
-| Component | Variable |
-|---|---|
-| Distance/cost tracker | `dist: dict[node -> float]`, initialized to `inf` except the source (`0.0`) |
-| Parent tracker (for path reconstruction) | `parent: dict[node -> node or None]` |
-| Visited set | `visited: set()` |
-| Priority queue | `pq`, a binary heap of `(cost_so_far, node)` via `heapq` |
+1. **`dist`** — a dict tracking the best known cost-so-far to reach each
+   node, initialized to `inf` except the source (`0.0`).
+2. **`parent`** — a dict tracking which node we arrived from, used to
+   reconstruct the winning path at the end by walking backwards from the
+   target.
+3. **`visited`** — a set of nodes whose shortest distance is finalized. Once
+   a node is popped from the queue and added here, it's never re-relaxed.
+4. **`pq`** — a binary min-heap (`heapq`) of `(cost_so_far, node)` pairs,
+   always expanding the currently-cheapest frontier node next.
 
-**Algorithm:**
-1. Pop the lowest-cost unvisited node from the heap.
-2. Mark it visited; if it's the target, stop early.
-3. "Relax" every unvisited neighbor (from `get_neighbors()` on the chosen matrix): if going
-   through the current node produces a lower cost than previously known, update `dist` and
-   `parent`, and push the neighbor back onto the heap.
-4. When the loop ends, reconstruct the path by walking `parent` pointers backward from
-   `target` to `source`, then reverse it.
+**Algorithm flow:** pop the cheapest node off `pq`; if already visited, skip
+it (a node can be pushed multiple times with different candidate costs, and
+only the first pop — the cheapest — matters); otherwise mark it visited,
+check for early exit if it's the target, then "relax" each unvisited
+neighbor (if the path through the current node is cheaper than that
+neighbor's currently-known best, update `dist`/`parent` and push it onto the
+heap).
 
-**Key design point:** the function is objective-agnostic — pass `time_matrix` to get the
-fastest route, or `cost_matrix` to get the cheapest route. This directly implements the
-proposal's requirement that "the optimizer handles one goal at a time" using whichever
-matrix is selected.
+**Return value:** `(path, total_cost)` where `path` is the ordered list of
+node labels from `source` to `target`, or `(None, inf)` if `target` is
+unreachable from `source`.
 
-**Complexity:** `O((V + E) log V)` with a binary heap, standard for Dijkstra.
+**Complexity:** O((V + E) log V) with a binary heap, standard for Dijkstra.
 
-### `scipy_shortest_path()` (verification helper)
-Wraps `scipy.sparse.csgraph.dijkstra` on the same matrix to independently confirm the
-hand-written `dijkstra()` produces the same path and total cost. Used purely as a sanity
-check, not as part of the "real" algorithm the project is graded on.
+### `scipy_shortest_path(matrix, source, target, node_index, nodes=NODES) -> (path, total_cost)`
+**Verification helper, not part of the core algorithm.** Runs
+`scipy.sparse.csgraph.dijkstra` on the same matrix and reconstructs the path
+from SciPy's predecessor array. Used to cross-check that the hand-rolled
+`dijkstra()` above produces the same answer as a well-tested external
+implementation. The sparse conversion maps `INF` → `0` (SciPy's "no edge"
+convention) and re-zeroes the diagonal so self-loops aren't misread as edges.
 
 ---
 
-## 3. `pareto_search.py`
+## `pareto_search.py` — Task 4: Multi-Objective Pareto Search (MAIN algorithm)
 
-**Purpose:** Implement the multi-objective route search described in the proposal — return
-the **set** of non-dominated (Pareto-optimal) routes between two nodes, instead of a single
-best answer.
-
-```python
-from pareto_search import pareto_search, time_matrix, cost_matrix, node_index
-
-result = pareto_search(time_matrix, cost_matrix, "A", "J", node_index)
-result["candidates"]      # every simple path found, with time/cost
-result["pareto_front"]    # non-dominated routes (the multi-objective answer)
-result["fastest_route"]   # fastest route on the Pareto front
-result["cheapest_route"]  # cheapest route on the Pareto front
-```
-
-### Module-level setup
-At import time, `pareto_search.py` imports `NODES`, `EDGES`, `INF`, and
-`build_adjacency_matrices` from `tensor_builder.py` and immediately calls
-`time_matrix, cost_matrix, node_index = build_adjacency_matrices(NODES, EDGES)`. This means
-`time_matrix`/`cost_matrix`/`node_index` for the **base** graph are already built and
-importable directly from `pareto_search` — callers don't have to rebuild them unless they're
-working with a different (e.g. randomized) graph, in which case they call
-`build_adjacency_matrices()` themselves with their own node/edge lists and pass the results
-into `pareto_search()` explicitly.
+**This is the primary multi-objective answer, not a validation step.**
+Answers "what are *all* the routes worth considering when both time and cost
+matter, and no single route wins on both?"
 
 ### `class Route`
-Represents one candidate path as a `[time, cost]` objective vector.
-
-- `__init__(path, total_time, total_cost)` — stores `path` (list of node labels) and
-  `objectives = np.array([total_time, total_cost])`.
-- `.time` / `.cost` — convenience properties reading `objectives[0]` / `objectives[1]`.
-- `.path_str` — `"A -> B -> D -> G -> J"` style string for display.
-- `.to_dict()` — serializes the route (used to compare against ground truth dictionaries).
-
-Using a small class instead of raw tuples keeps the objective vector generalizable to more
-than two objectives later (e.g. adding reliability) without changing the dominance logic.
+The core data structure for multi-objective search. Wraps a path with its
+`[time, cost]` **objective vector** (a 2-element `numpy` array), so
+dominance comparisons can be done as vector operations rather than
+field-by-field comparisons.
+- `.time`, `.cost` — convenience accessors into `objectives[0]`/`objectives[1]`.
+- `.path_str` — the path formatted as `"A -> B -> ... -> J"`.
+- `.to_dict()` — plain-dict form (`path`, `time`, `cost`, `objectives`), used
+  when comparing against `ground_truth_generator`'s plain-dict routes in
+  tests.
 
 ### `generate_candidate_routes(time_matrix, cost_matrix, source, destination, node_index, nodes=NODES) -> list[Route]`
-Enumerates **every simple path** (no repeated nodes) from `source` to `destination` using an
-**iterative DFS** (an explicit stack, not recursion, to avoid recursion-depth issues):
+**Step 1 of the pipeline.** Iterative DFS (explicit stack, not recursion)
+over every *simple* path (no repeated nodes) from `source` to `destination`.
+Each completed path becomes a `Route`. Validates that `source`/`destination`
+exist and are different nodes before searching.
 
-- Stack entries are `(current_node_index, visited_set, cumulative_time, cumulative_cost, path_so_far)`.
-- At each step, every unvisited neighbor (from *both* matrices simultaneously, since every
-  edge has both a time and a cost value) is pushed onto the stack with updated running totals.
-- When the destination is reached, the accumulated path/time/cost is packaged into a `Route`
-  object and added to the result list.
-
-This is Step 1 of the pipeline described in the proposal: "starting from the source node,
-generate candidate routes through graph traversal."
-
-**Complexity:** exponential in the worst case (number of simple paths can grow factorially),
-which is why this is explicitly restricted to small graphs in both the proposal and the
-limitations section.
-
-### `dominates(route_a: Route, route_b: Route) -> bool`
-Implements the exact Pareto dominance definition from the proposal:
-
-> route_a dominates route_b if and only if route_a is no worse than route_b in **all**
-> objectives, and strictly better in **at least one**.
-
-Implemented with two vectorized NumPy comparisons:
-```python
-no_worse_in_all       = np.all(route_a.objectives <= route_b.objectives)
-better_in_at_least_one = np.any(route_a.objectives <  route_b.objectives)
-```
-Both lower time and lower cost are "better," so no transformation is needed for this pair of
-objectives.
+### `dominates(route_a, route_b) -> bool`
+**The dominance rule.** `route_a` dominates `route_b` iff `route_a` is no
+worse in *every* objective (`<=` on both time and cost) **and** strictly
+better in *at least one*. Implemented with `numpy` array comparisons
+(`np.all`, `np.any`) so it generalizes cleanly if a third objective (e.g.
+reliability) were added later.
 
 ### `dominance_relation(route_a, route_b) -> str`
-Human-readable helper ("A dominates B" / "B dominates A" / "identical" / "non-dominated
-(incomparable)") — mainly used for explanation/debugging in the notebook.
+Human-readable explanation of the relationship between two routes (`"A
+dominates B"`, `"B dominates A"`, `"identical"`, or `"non-dominated
+(incomparable)"`). Debugging/explanation aid, not used in the core pipeline.
 
-### `pareto_filter(routes: list[Route]) -> list[Route]`
-Given all candidate routes, keeps only the ones **not dominated by any other route** in the
-list (an `O(n² · m)` pairwise comparison, where `n` = number of routes and `m` = number of
-objectives — acceptable for the small graphs used here). Results are sorted by ascending
-time, then ascending cost, for readability.
+### `pareto_filter(routes) -> list[Route]`
+**Step 3 of the pipeline.** For each candidate, checks whether *any* other
+candidate dominates it; if none does, it survives onto the Pareto front.
+Returns the front sorted by `(time, cost)` ascending.
+**Complexity:** O(n² · m) where n = number of candidate routes, m = number
+of objectives (2 here) — acceptable for the small graphs this project
+targets, and explicitly noted as such in the code.
 
-### `identify_dominated_routes(routes: list[Route]) -> list[(dominated, dominator)]`
-Same pairwise scan as `pareto_filter`, but instead of just keeping survivors, it records
-**why** each eliminated route was eliminated (and by which specific route), so the report
-can explain the filtering decision rather than just presenting a final list.
+### `identify_dominated_routes(routes) -> list[tuple[Route, Route]]`
+Companion to `pareto_filter` that also records *why* each eliminated route
+was cut, as `(dominated_route, route_that_dominated_it)` pairs — used for
+the "ELIMINATED ROUTES" section of the report and the grey points on the
+objective-space plot.
 
 ### `pareto_search(time_matrix, cost_matrix, source, destination, node_index, nodes=NODES) -> dict`
-The main entry point — orchestrates the full multi-objective pipeline in one call:
+**The full pipeline / main entry point**, matching the plan exactly:
+1. DFS to generate all simple candidate routes (`generate_candidate_routes`).
+2. Represent each as a `[time, cost]` vector (`Route`).
+3. Filter by Pareto dominance (`pareto_filter`).
+4. Return the non-dominated set as the final answer.
 
-1. `generate_candidate_routes(...)`
-2. `pareto_filter(candidates)`
-3. `identify_dominated_routes(candidates)`
-4. Picks `fastest_route` and `cheapest_route` **from the Pareto front** (not from all
-   candidates), since those two extremes of the front are usually the most interesting to a
-   user.
+Returns a dict with `source`, `destination`, `candidates` (all routes
+found), `pareto_front` (the answer), `dominated_pairs`, `dominated_count`,
+`fastest_route` (lowest-time route *on the front*), and `cheapest_route`
+(lowest-cost route *on the front*). Handles the "no path exists" case by
+returning empty/`None` fields instead of raising.
 
-Returns a dictionary with `source`, `destination`, `candidates`, `pareto_front`,
-`dominated_pairs`, `dominated_count`, `fastest_route`, `cheapest_route`. As emphasized in the
-project's requirements-coverage notes, **the Pareto front returned here is the actual answer
-to the multi-objective problem — not a validation step.** (Ground-truth brute force,
-described below, plays that validating role instead.)
+### `display_pareto_results(result, show_dominated=True) -> None`
+Formats and prints the full report: summary counts, a table of Pareto-front
+routes annotated with `< fastest`/`< cheapest` markers, the raw objective
+vectors, a trade-off summary (how much more the fastest route costs vs. the
+cheapest, and vice versa), and optionally the eliminated routes with their
+dominating route. Purely a presentation function — it doesn't compute
+anything new.
 
-### `display_pareto_results(result: dict, show_dominated=True) -> None`
-Formats the `pareto_search()` output into a readable report:
-- Summary counts (candidates generated, dominated removed, Pareto-optimal found).
-- A table of the Pareto-optimal routes with time/cost and a "fastest" / "cheapest" /
-  "fastest & cheapest" annotation.
-- The raw `[time, cost]` objective vectors for each surviving route.
-- A trade-off summary comparing the fastest and cheapest routes on the front (extra cost to
-  go fast vs. extra time to go cheap).
-- Optionally, the list of eliminated routes and which route dominated each one.
-
-### `plot_objective_space(result: dict) -> None`
-Visualizes every candidate route as a point in (time, cost) space:
-- Grey points = dominated (eliminated) routes.
-- Red points = the Pareto-optimal front.
-- A dashed red step line connecting the front (the classic "staircase" shape of a 2-D Pareto
-  frontier).
-- Each Pareto-optimal point is annotated with its path.
-
-This is the direct visual counterpart to the textual report — it shows *why* the surviving
-routes are optimal (nothing grey sits below/left of the red staircase).
+### `plot_objective_space(result) -> None`
+Draws a matplotlib scatter/step plot of every candidate route in
+`(time, cost)` space: grey points for dominated routes, red points for the
+Pareto front, a dashed staircase line connecting the front, and path labels
+on each front point. Visual counterpart to `display_pareto_results`.
 
 ---
 
-## 4. `ground_truth_generator.py`
+## `ground_truth_generator.py` — Testing Utility (NOT a main algorithm module)
 
-**Purpose:** An **independent** brute-force reference implementation used only to verify the
-Dijkstra and Pareto outputs. It deliberately does **not** import or call anything from
-`pareto_search.py` — it only depends on `tensor_builder.py` (`NODES`, `EDGES`) — so a match
-between this module's output and `pareto_search`'s output is real evidence of correctness,
-not the algorithm agreeing with itself.
+> **This module is deliberately kept separate from, and is never imported
+> by, `dijkstra_search.py` or `pareto_search.py`.** Its only job is to be an
+> independent, "obviously correct" oracle that the real algorithms are
+> checked against. If it shared code with the algorithms it's meant to
+> validate, a shared bug could pass both silently — so it re-implements
+> everything from scratch, in the least clever way possible, deliberately
+> trading performance for legibility.
 
-```python
-from ground_truth_generator import generate_ground_truth
+### `enumerate_all_simple_paths(source, destination) -> list[dict]`
+Brute-force backtracking DFS (recursive, with explicit `visited`/
+`current_path` state) over every simple path between two nodes. Each result
+is a plain dict: `{"path": [...], "time": ..., "cost": ...}`. This is the
+brute-force equivalent of `pareto_search.generate_candidate_routes`, written
+independently.
 
-gt = generate_ground_truth("A", "J")
-gt["all_candidates"]   # every simple path found, with time/cost
-gt["best_by_time"]     # expected single-objective answer (minimize time)
-gt["best_by_cost"]     # expected single-objective answer (minimize cost)
-gt["pareto_front"]     # expected multi-objective answer (non-dominated routes)
-```
+### `brute_force_best_by_objective(routes, objective) -> dict`
+Linear scan for the route with the minimum `"time"` or `"cost"` value — the
+simplest possible "best route" check, used as the ground truth for
+`dijkstra_search.dijkstra`'s output.
 
-### Module-level setup
-- `_build_adjacency_list(edges) -> dict[str, list[(neighbor, time, cost)]]` — converts the
-  flat `EDGES` list into an adjacency list keyed by source node, for backtracking traversal.
-- `_ADJACENCY = _build_adjacency_list(EDGES)` — built once at import time from
-  `tensor_builder`'s `NODES`/`EDGES`. (Tests that need a different/randomized graph
-  temporarily reassign `gtg.NODES`, `gtg.EDGES`, and rebuild `gtg._ADJACENCY` before calling
-  the generator, then restore the originals afterward.)
+### `_route_is_dominated_by(candidate, other) -> bool` / `brute_force_pareto_front(routes) -> list[dict]`
+A from-scratch re-implementation of the same dominance rule used in
+`pareto_search.dominates`/`pareto_filter`, but written with plain
+dict/comparison logic instead of `numpy` vectors, and with an independent
+O(n²) all-pairs scan. Used as the ground truth for
+`pareto_search.pareto_filter`'s output.
 
-### Section 1 — Path enumeration
-`enumerate_all_simple_paths(source, destination) -> list[dict]`
-Finds **every simple path** from `source` to `destination` using classic recursive
-backtracking: a `visited` set and a `current_path` list are maintained across recursive
-calls; whenever `destination` is reached, a snapshot `{"path", "time", "cost"}` is appended
-to `found_routes`; the last node is then popped/unvisited on the way back up so every other
-branch can still be explored. Raises `ValueError` if `source`/`destination` aren't valid
-nodes.
+### `generate_ground_truth(source, destination) -> dict`
+Convenience entry point that runs all of the above and returns
+`all_candidates`, `best_by_time`, `best_by_cost`, and `pareto_front` in one
+dict — this is what the test suite calls to get "the right answer" for a
+given source/destination pair.
 
-### Section 2 — Single-objective ground truth
-`brute_force_best_by_objective(routes, objective) -> dict`
-Given the list of all enumerated routes, does a simple linear scan to find the one with the
-minimum `"time"` or minimum `"cost"` (whichever `objective` string is passed in). This is the
-expected answer that the manual `dijkstra()` implementation should reproduce exactly.
-
-### Section 3 — Pareto front (brute-force dominance filtering)
-- `_route_is_dominated_by(candidate, other) -> bool` — dictionary-based equivalent of
-  `pareto_search.dominates()`: `other` dominates `candidate` if `other` is no worse in both
-  time and cost, and strictly better in at least one.
-- `brute_force_pareto_front(routes) -> list[dict]` — for every candidate, checks whether
-  *any* other route dominates it; keeps only the non-dominated ones and sorts the survivors
-  by `(time, cost)`. This is the independent, from-scratch equivalent of
-  `pareto_search.pareto_filter()`.
-
-### Section 4 — Main entry point
-`generate_ground_truth(source, destination) -> dict`
-Runs sections 1–3 in sequence and returns `source`, `destination`, `all_candidates`,
-`best_by_time`, `best_by_cost`, and `pareto_front` — everything needed to check both the
-single-objective and multi-objective outputs of the "real" algorithm modules.
-
-### Section 5 — Comparison helpers
-- `paths_match(path_a, path_b) -> bool` — plain list equality between two node-label
-  sequences.
-- `route_sets_match(routes_a, routes_b, tolerance=1e-9) -> bool` — compares two lists of
-  route dictionaries as **unordered sets**, using a rounded `(path, time, cost)` tuple as the
-  comparison key so floating-point rounding doesn't cause a false mismatch. This is what the
-  test suite uses to check "does `pareto_search()`'s candidate/Pareto-front list exactly
-  equal the brute-force one?" regardless of the order either list was produced in.
-
-### Section 6 — Standalone demo
-Running `python ground_truth_generator.py` directly prints the brute-force ground truth for
-`A -> J` on the base graph: total simple paths found, the best-by-time and best-by-cost
-routes, and the full Pareto front.
-
-**Why brute force is acceptable here (and only here):** the number of simple paths grows
-very quickly with graph size, so this approach is not efficient for large graphs — but for
-the small graphs used in this project it is entirely feasible, and its only job is to
-generate correctness labels for testing, not to solve real instances.
+### `paths_match(path_a, path_b) -> bool` / `route_sets_match(routes_a, routes_b, tolerance=1e-9) -> bool`
+Comparison helpers built specifically for testing: `route_sets_match`
+treats two route lists as **unordered sets** (since DFS traversal order
+isn't guaranteed to match between two independent implementations) and
+compares them via a rounded `(path, time, cost)` key, so floating-point
+rounding differences within `tolerance` don't cause false test failures.
 
 ---
 
-## 5. Test Suite (notebook "Testing" section)
+## `main.py` — Demo Runner
 
-The automated test suite (in the notebook, easily extractable into a `pytest` file) ties
-everything together. On each run it:
+Not an algorithm module — it only imports and calls the real modules above
+and handles user I/O.
 
-1. Builds (or reuses) a **randomized** test graph via `randomize_test_graph()` — up to 22
-   nodes, randomized time (1–10h) and cost ($30–$200) ranges, guaranteed single start (`A`)
-   and end node, and no unintended dead ends.
-2. Builds the adjacency matrices/tensor for that random graph
-   (`tensor_builder.build_adjacency_matrices`, `build_tensor`).
-3. Temporarily points `ground_truth_generator` at the same random graph and generates ground
-   truth (`generate_ground_truth`).
-4. Runs `pareto_search()` on the same random graph.
-5. Executes five checks:
-
-| Test | What it verifies |
-|---|---|
-| `test_matrix_and_tensor_construction` | Matrix/tensor shapes are correct; tensor slices match the source matrices; `INF` pattern and values match a matrix rebuilt independently from the edge list. |
-| `test_dijkstra_output_vs_ground_truth` | A reference Dijkstra run (time and cost) matches the brute-force `best_by_time` / `best_by_cost` paths and totals **exactly**. |
-| `test_route_reconstruction` | Reconstructed paths are non-empty, start at the source, and end at the destination. |
-| `test_pareto_front_vs_ground_truth` | The candidate set and Pareto front produced by `pareto_search()` exactly match the brute-force enumeration (`route_sets_match`), and the fastest/cheapest routes on the front match ground truth. |
-| `test_full_integration_output` | `display_pareto_results()`'s printed report actually contains the correct header, counts, and every expected route string. |
-
-Each test is wrapped so a failure is recorded and reported by name rather than stopping the
-whole run immediately, and the suite raises an `AssertionError` summarizing all failures (if
-any) at the end — otherwise it prints `"All automated tests passed."`
-
-Running this suite repeatedly (each run regenerates a new random graph) is what lets the
-team claim the algorithms are correct in general, not just on the one hand-built example
-graph.
+- **`_prompt_node` / `_prompt_mode`** — input validation loops; re-prompt
+  until the user gives a valid node label or a `1`–`4` mode choice.
+- **`run_time_mode` / `run_cost_mode`** — call `dijkstra_search.dijkstra` on
+  the time matrix or cost matrix respectively and print the result.
+- **`run_pareto_mode`** — calls `pareto_search.pareto_search` and prints the
+  result via `pareto_search.display_pareto_results`.
+- **`main()`** — orchestrates the above: optionally prints the matrices,
+  prompts for start/destination/mode, and dispatches to the right `run_*`
+  function(s).
 
 ---
 
-## 6. How the Pieces Fit Together
+## `tests/test_project.py` — Automated Tests
 
-```
-                 ┌────────────────────┐
-                 │  tensor_builder.py │
-                 │  (matrices/tensor) │
-                 └─────────┬──────────┘
-                           │ time_matrix, cost_matrix, node_index
-              ┌────────────┴─────────────┐
-              ▼                          ▼
-     dijkstra(matrix, ...)      pareto_search.py
-   (single-objective route)   (multi-objective routes)
-              │                          │
-              ▼                          ▼
-        one best path         Pareto-optimal route set
-              │                          │
-              └────────────┬─────────────┘
-                            ▼
-               ground_truth_generator.py
-             (independent brute-force check)
-                            │
-                            ▼
-                    automated test suite
-                 (pass/fail correctness report)
-```
+Uses `pytest`. Every test either checks a module's output directly (e.g.
+matrix shape, diagonal values) or cross-checks a main algorithm's output
+against `ground_truth_generator`'s brute-force answer, on both the fixed
+project graph and several randomized graphs (via the local
+`randomize_test_graph` helper, adapted from the project notebook) so
+correctness isn't only demonstrated on one hand-picked example.
 
-This mirrors the pipeline described in the proposal: represent the network -> optimize for
-one objective -> optimize for multiple objectives via Pareto dominance -> verify everything
-against independently generated ground truth.
+- `test_matrix_shapes_and_diagonal`, `test_tensor_stacks_time_then_cost`,
+  `test_known_edge_values_appear_in_matrices` — Task 2 checks.
+- `test_dijkstra_fastest_route_on_fixed_graph`,
+  `test_dijkstra_cheapest_route_on_fixed_graph`,
+  `test_dijkstra_returns_none_when_unreachable`,
+  `test_dijkstra_matches_reference_on_random_graphs` — Task 3 checks, the
+  last one against a second, independently written reference Dijkstra
+  (`_reference_dijkstra`, local to the test file — not imported from
+  `dijkstra_search.py`).
+- `test_pareto_front_matches_ground_truth_on_fixed_graph`,
+  `test_pareto_front_matches_ground_truth_on_random_graphs`,
+  `test_no_route_dominates_another_within_the_front` — Task 4 checks, the
+  last one a direct sanity check on the Pareto-front definition itself
+  (no surviving route may dominate another surviving route).
+
+Run all of them with `pytest -v` from the project root.
