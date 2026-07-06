@@ -1,4 +1,4 @@
-# DSA Final Group Project - Multi-Objective Network Optimization
+# DSA Final Group Project
 **Course:** PROG 2301 Data Structures and Algorithms, Asian Institute of Management
 **Instructor:** Prof. Jose Miguel Bautista\
 **LT6**: Chloe Ganaden, Elijah Haduca, Adrien Maniquiz, Uriel Orpilla, Hillary So, Ethen Soriano, Hannah Trajano
