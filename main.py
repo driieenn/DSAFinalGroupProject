@@ -17,28 +17,37 @@ from dijkstra_search import dijkstra
 from pareto_search import pareto_search, display_pareto_results
 
 
-def show_available_nodes():
+def show_available_nodes() -> None:
+    """
+    Prints all available nodes in the network.
+    """
     print("\nAvailable nodes:")
     print(", ".join(NODES))
 
 
-def format_path(path):
+def format_path(path: list[str] | None) -> str:
+    """
+    Converts a path list into a readable string.
+    """
     if path is None:
         return "No path found"
     return " -> ".join(path)
 
 
-def run_dijkstra_demo(matrix, source, destination, node_index, objective_name):
+def run_dijkstra_demo(
+    matrix,
+    source: str,
+    destination: str,
+    node_index: dict[str, int],
+    objective_name: str,
+) -> None:
     """
     Runs Dijkstra for one objective and prints the result.
-
-    Expected dijkstra output:
-        path, total_value
     """
     path, total_value = dijkstra(matrix, source, destination, node_index)
 
     print(f"\n{objective_name.upper()} ROUTE")
-    print("-" * 40)
+    print("-" * 50)
 
     if path is None:
         print(f"No route found from {source} to {destination}.")
@@ -48,15 +57,30 @@ def run_dijkstra_demo(matrix, source, destination, node_index, objective_name):
     print(f"Total {objective_name}: {total_value:.2f}")
 
 
-def run_pareto_demo(time_matrix, cost_matrix, source, destination, node_index):
+def run_pareto_demo(
+    time_matrix,
+    cost_matrix,
+    source: str,
+    destination: str,
+    node_index: dict[str, int],
+) -> None:
     """
     Runs Pareto-front search and prints the result.
     """
-    result = pareto_search(time_matrix, cost_matrix, source, destination, node_index)
+    result = pareto_search(
+        time_matrix,
+        cost_matrix,
+        source,
+        destination,
+        node_index,
+    )
     display_pareto_results(result, show_dominated=True)
 
 
-def main():
+def main() -> None:
+    """
+    Main CLI menu.
+    """
     print("=" * 60)
     print("DSA FINAL GROUP PROJECT")
     print("Multi-Objective Network Optimization")
