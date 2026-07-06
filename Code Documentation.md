@@ -1,25 +1,82 @@
 # Code Documentation
 
-This document describes every section in the project, its role, and its major
-functions/classes. It's meant to be read alongside the source — every
+This document describes every module in the project, its role, and its major
+functions/classes. It's meant to be read alongside the source. Every
 function below also carries a docstring and inline comments in the code
-itself; this file adds the cross-module context (what calls what, why a
-function exists, which task it satisfies).
+itself; this file adds the cross-module context. 
 
 **Module role summary:**
 
 | Module | Role |
 |---|---|
-| `tensor_builder.py` | Data structures — builds the graph's matrices/tensor |
-| `dijkstra_search.py` | **Main algorithm** — single-objective shortest path |
-| `pareto_search.py` | **Main algorithm** — multi-objective Pareto-front search |
-| `ground_truth_generator.py` | **Testing utility only** — brute-force oracle, not used in production output |
-| `main.py` | Demo runner — wires the above together, no algorithm logic |
+| `tensor_builder.py` | Data structures -  builds the graph's matrices/tensor |
+| `dijkstra_search.py` | **Main algorithm** - single-objective shortest path |
+| `pareto_search.py` | **Main algorithm** -  multi-objective Pareto-front search |
+| `ground_truth_generator.py` | **Testing utility only** -  brute-force oracle, not used in production output |
+| `main.py` | Demo runner -  wires the above together, no algorithm logic |
 | `tests/test_project.py` | Automated tests |
 
 ---
 
-## `tensor_builder.py` — Task 1/2: Graph & Tensor Representation
+## Documentation Conventions
+
+**Module docstrings.** Every `.py` file opens with a docstring naming the
+file, its role, what task it satisfies, and whether it's a
+main algorithm or a testing utility. For example:
+
+```python
+"""
+pareto_search.py
+
+Multi-Objective Pareto-Front Search
+primary multi-objective Pareto-front search. requires tensor_builder.py
+...
+"""
+```
+
+versus the brute-force module, which is explicitly flagged as non-production:
+
+```python
+"""
+ground_truth_generator.py
+
+*** TESTING UTILITY -- NOT A MAIN ALGORITHM MODULE ***
+...
+"""
+```
+
+**Function docstrings.** Every major function has a docstring covering a
+short summary, its `Args`/parameters, and its `Returns` value, e.g.:
+
+```python
+def dijkstra(matrix, source, target, node_index, nodes=NODES):
+    """
+    Dijkstra-style single-objective shortest path.
+
+    Args:
+        matrix     : either time_matrix or cost_matrix (NxN ndarray)
+        source     : start node label, e.g. "A"
+        target     : end node label, e.g. "J"
+        node_index : dict from build_node_index() / build_adjacency_matrices()
+        nodes      : ordered list of node labels
+
+    Returns:
+        path       : list of node labels from source to target, or None
+                     if no path exists
+        total_cost : float, total weight along that path (inf if unreachable)
+    """
+```
+
+**Inline comments** explain *why* a step happens, not *what* the line
+literally does — e.g. `# Early exit once target is settled` rather than
+`# break out of the loop`.
+
+The rest of this document is organized module-by-module, matching the
+project structure in `README.md`.
+
+---
+
+## `tensor_builder.py` - Graph & Tensor Representation
 
 Builds the directed, dual-weighted network into matrix form. Pure data
 structure code; contains no pathfinding logic.
