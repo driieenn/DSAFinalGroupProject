@@ -1,5 +1,5 @@
 # DSA Final Group Project
-**Course:** PROG 2301 Data Structures and Algorithms, Asian Institute of Management
+**Course:** PROG 2301 Data Structures and Algorithms\
 **Instructor:** Prof. Jose Miguel Bautista\
 **LT6**: Chloe Ganaden, Elijah Haduca, Adrien Maniquiz, Uriel Orpilla, Hillary So, Ethen Soriano, Hannah Trajano
 
@@ -10,7 +10,7 @@ This project implements algorithms for finding optimal routes through a directed
 
 On top of that representation, the project implements a **single-objective optimizer** (a hand-written Dijkstra-style shortest path algorithm that can minimize either time or cost) and a **multi-objective Pareto-front search** (which returns the full set of non-dominated time/cost trade-off routes instead of forcing everything into one score). Both optimized algorithms are compared against an independent **brute-force ground-truth generator**, which enumerates every possible route and is used *solely* for correctness testing, it is not part of the production algorithm.
 
-The official entry point for running the project is **main.py** (an interactive CLI demo). The original exploratory work - network design, visualization, and early testing - lives in the project notebook `LT6_DSA-2.ipynb`; the finalized, documented, and tested versions of that same logic are what live in the `.py` modules described below, and those `.py` modules are what should actually be run and graded.
+The official entry point for running the project is **main.py** (an interactive CLI demo). The original exploratory work - network design, visualization, and early testing, lives in the project notebook `LT6_DSA-2.ipynb`; the finalized, documented, and tested versions of that same logic are what live in the `.py` modules described below, and those `.py` modules are what should actually be run and graded.
 
 ---
 
@@ -32,7 +32,6 @@ The official entry point for running the project is **main.py** (an interactive 
 .
 ├── README.md                   # this file
 ├── CODE_DOCUMENTATION.md       # detailed module/function reference
-├── requirements.txt            # pinned dependencies
 ├── tensor_builder.py           # graph data, adjacency matrices, tensor
 ├── dijkstra_search.py          # single-objective optimizer (MAIN algorithm)
 ├── pareto_search.py            # multi-objective Pareto-front search (MAIN algorithm)
@@ -48,7 +47,7 @@ The official entry point for running the project is **main.py** (an interactive 
 | `dijkstra_search.py` | **Main algorithm.** Hand-implemented Dijkstra's algorithm that finds the best route for one objective (time or cost) at a time. |
 | `pareto_search.py` | **Main algorithm.** Generates all candidate routes and filters them down to the Pareto-optimal (non-dominated) set. |
 | `ground_truth_generator.py` | **Testing utility, not part of the main algorithm.** Brute-force enumerates every simple path and computes the "obviously correct" answer, used only to check the two modules above. |
-| `main.py` | The official entry point. Interactive CLI demo that wires the modules together — contains no algorithm logic of its own. |
+| `main.py` | The official entry point. Interactive CLI demo that wires the modules together contains no algorithm logic of its own. |
 | `tests/test_project.py` | Automated `pytest` suite. |
 
 ---
@@ -149,13 +148,13 @@ python ground_truth_generator.py
 
 ## Demo
 
-To reproduce what the project demonstrates, end to end:
+To reproduce what the project demonstrates:
 
 1. **Build the tensors.** Run `python tensor_builder.py` to see the time matrix, cost matrix, and confirm the tensor shape is `(2, 10, 10)`.
 2. **Run the single-objective optimizer.** Run `python dijkstra_search.py` to see the fastest and cheapest `A -> J` routes.
 3. **Run the Pareto search.** Run `python pareto_search.py` to see the full multi-objective analysis (candidates, eliminated/dominated routes, and the final Pareto front), plus a plot of the objective space.
 4. **Compare with brute force.** Run `python ground_truth_generator.py` and check that its `best_by_time`, `best_by_cost`, and `pareto_front` match steps 2 and 3.
-5. **Observe it all together.** Run `python main.py`, choose mode `4` ("run all three and compare"), and pick a start/destination pair — you'll see the fastest route, the cheapest route, and the Pareto front side by side.
+5. **Observe it all together.** Run `python main.py`, choose mode `4` ("run all three and compare"), and pick a start/destination pair. You'll see the fastest route, the cheapest route, and the Pareto front side by side.
 6. **Verify automatically instead of by eye.** Run `pytest -v` and confirm all tests pass.
 
 ---
@@ -164,12 +163,12 @@ To reproduce what the project demonstrates, end to end:
 
 Short summaries below; see **`CODE_DOCUMENTATION.md`** for full function-by-function documentation.
 
-- **`tensor_builder.py`** — Data structures for the network. Builds `NODES`/`EDGES` into a time matrix, cost matrix, and a `(2, N, N)` tensor.
-- **`dijkstra_search.py`** — Main single-objective algorithm. A hand-implemented Dijkstra (distance tracker, parent tracker, visited set, priority queue) that works on either the time or cost matrix.
-- **`pareto_search.py`** — Main multi-objective algorithm. Generates candidate routes, represents each as a `[time, cost]` vector via the `Route` class, and filters them by Pareto dominance.
-- **`ground_truth_generator.py`** — Testing utility only. Independent brute-force enumeration and comparison, used as an oracle in `tests/test_project.py`. Never imported by the two modules above.
-- **`main.py`** — The official entry point. Interactive CLI demo that wires the above modules together.
-- **`tests/test_project.py`** — Automated `pytest` suite.
+- **`tensor_builder.py`** - Data structures for the network. Builds `NODES`/`EDGES` into a time matrix, cost matrix, and a `(2, N, N)` tensor.
+- **`dijkstra_search.py`** - Main single-objective algorithm. A hand-implemented Dijkstra (distance tracker, parent tracker, visited set, priority queue) that works on either the time or cost matrix.
+- **`pareto_search.py`** - Main multi-objective algorithm. Generates candidate routes, represents each as a `[time, cost]` vector via the `Route` class, and filters them by Pareto dominance.
+- **`ground_truth_generator.py`** - Testing utility only. Independent brute-force enumeration and comparison, used as an oracle in `tests/test_project.py`. Never imported by the two modules above.
+- **`main.py`** - The official entry point. Interactive CLI demo that wires the above modules together.
+- **`tests/test_project.py`** - Automated `pytest` suite.
 
 ---
 
@@ -177,19 +176,19 @@ Short summaries below; see **`CODE_DOCUMENTATION.md`** for full function-by-func
 
 | Name | Responsibility |
 |---|---|
-| Hillary So | Network & graph design / Demo Runner |
 | Chloe Ganaden | Adjacency matrices & tensor representation |
-| Ethan Soriano | Adjacency matrices & tensor representation |
-| Hannah Trajano | Documentation & report |
-| Uriel Orpilla | Single-objective optimizer / Testing Suite |
-| Adrien Maniquis | Single-objective optimizer / Pareto search |
 | Elijah Haduca | Ground-truth generation & testing / Pareto search |
+| Adrien Maniquis | Single-objective optimizer / Pareto search |
+| Uriel Orpilla | Single-objective optimizer / Testing Suite |
+| Hillary So | Network & graph design / Demo Runner |
+| Ethan Soriano | Adjacency matrices & tensor representation |
+| Hannah Trajano | Documentation / Report / Presentation |
 
 
 ---
 
 ## Notes and Limitations
 
-- The network is a small, hand-designed simulation (10 nodes, 16 directed edges) chosen to create meaningful time/cost trade-offs — it is not sourced from real logistics data.
-- Route enumeration in `ground_truth_generator.py` (and the candidate generation step in `pareto_search.py`) is brute-force over all simple paths. This is intentional for a small, controllable graph but does not scale to large networks.
+- The network is a small, hand-designed simulation (10 nodes, 16 directed edges) chosen to create meaningful time/cost trade-offs. It is not sourced from real logistics data.
+- Route enumeration in `ground_truth_generator.py` (and the candidate generation step in `pareto_search.py`) is brute-force over all simple paths. This is intentional for a small graph but does not scale to large networks.
 - The Pareto-front implementation is a simplified version of ideas from NAMOA*/BOA*-style multi-objective search literature; it does not claim to reproduce those algorithms at scale.
