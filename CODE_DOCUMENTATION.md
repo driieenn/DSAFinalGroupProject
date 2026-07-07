@@ -213,16 +213,16 @@ dominates B"`, `"B dominates A"`, `"identical"`, or `"non-dominated
 (incomparable)"`). Debugging/explanation aid, not used in the core pipeline.
 
 ### `pareto_filter(routes) -> list[Route]`
-**Step 3 of the pipeline.** For each candidate, checks whether *any* other
+**Step 2 of the pipeline.** For each candidate, checks whether *any* other
 candidate dominates it; if none does, it survives onto the Pareto front.
 Returns the front sorted by `(time, cost)` ascending.
 **Complexity:** O(n² · m) where n = number of candidate routes, m = number
-of objectives (2 here) — acceptable for the small graphs this project
+of objectives (2 here) - acceptable for the small graphs this project
 targets, and explicitly noted as such in the code.
 
 ### `identify_dominated_routes(routes) -> list[tuple[Route, Route]]`
 Companion to `pareto_filter` that also records *why* each eliminated route
-was cut, as `(dominated_route, route_that_dominated_it)` pairs — used for
+was cut, as `(dominated_route, route_that_dominated_it)` pairs - used for
 the "ELIMINATED ROUTES" section of the report and the grey points on the
 objective-space plot.
 
@@ -261,7 +261,7 @@ on each front point. Visual counterpart to `display_pareto_results`.
 > by, `dijkstra_search.py` or `pareto_search.py`.** Its only job is to be an
 > independent, "obviously correct" oracle that the real algorithms are
 > checked against. If it shared code with the algorithms it's meant to
-> validate, a shared bug could pass both silently — so it re-implements
+> validate, a shared bug could pass both silently - so it re-implements
 > everything from scratch, in the least clever way possible, deliberately
 > trading performance for legibility.
 
@@ -299,21 +299,74 @@ rounding differences within `tolerance` don't cause false test failures.
 
 ---
 
-## `main.py` — Demo Runner
+## `main.py` - Demo Runner
 
 Not an algorithm module — it only imports and calls the real modules above
-and handles user I/O.
+and handles user I/O. Every function has a short docstring; the notes below
+add the "why" behind each one
 
-- **`_prompt_node` / `_prompt_mode`** — input validation loops; re-prompt
-  until the user gives a valid node label or a `1`–`4` mode choice.
-- **`run_time_mode` / `run_cost_mode`** — call `dijkstra_search.dijkstra` on
-  the time matrix or cost matrix respectively and print the result.
-- **`run_pareto_mode`** — calls `pareto_search.pareto_search` and prints the
-  result via `pareto_search.display_pareto_results`.
-- **`main()`** — orchestrates the above: optionally prints the matrices,
-  prompts for start/destination/mode, and dispatches to the right `run_*`
-  function(s).
+show_available_nodes() -> None
 
+Prints the full NODES list (A–J) so the user knows what's valid before
+being asked to type a start/destination node. Display-only, no return value.
+
+format_path(path: list[str] | None) -> str
+
+Converts a path list like ["A", "B", "J"] into the readable string
+"A -> B -> J". Returns the literal string "No path found" if path is
+None, so callers can print a result unconditionally without a separate
+if path is None branch at every call site.
+
+run_dijkstra_demo(matrix, source, destination, node_index, objective_name) -> None
+
+Runs dijkstra_search.dijkstra once for whichever matrix (time or cost) is
+passed in, then prints a labeled block ("TIME ROUTE" / "COST ROUTE")
+containing the route (via format_path) and the total value formatted to
+two decimal places. objective_name is a plain string ("time" or
+"cost") used only for the printed labels — the actual objective being
+optimized is determined by which matrix argument is passed in, exactly
+like dijkstra() itself. Handles the unreachable case by printing
+"No route found from {source} to {destination}." instead of trying to
+format None/inf.
+
+run_pareto_demo(time_matrix, cost_matrix, source, destination, node_index) -> None
+
+Calls pareto_search.pareto_search with both matrices and prints the full
+result via pareto_search.display_pareto_results(result, show_dominated=True)
+— i.e. it always shows the eliminated/dominated routes as well as the
+Pareto front, not just the front by itself.
+
+main() -> None
+
+The CLI entry point and orchestration logic, in order:
+
+
+Prints the project banner.
+Unconditionally builds the time matrix, cost matrix, and tensor
+(build_adjacency_matrices, build_tensor) and prints the tensor's
+shape — this always happens, regardless of any later user choice.
+Asks "Show time and cost matrices first? (y/n)"; if y, prints both
+matrices via tensor_builder.print_matrix.
+Calls show_available_nodes().
+Reads a start node and a destination node from the user.
+Unlike a typical input-validation loop, this does not re-prompt. If
+either node isn't in node_index, or the two nodes are the same, main()
+prints an error message and returns immediately — the user has to re-run
+python main.py to try again. This is a deliberate simplicity trade-off
+for a course demo, not an oversight; it's called out explicitly here (and
+in the README) so it isn't mistaken for a bug.
+Prints the four-option mode menu and reads the user's choice.
+Dispatches based on that choice:
+
+1 → run_dijkstra_demo(time_matrix, ..., "time")
+2 → run_dijkstra_demo(cost_matrix, ..., "cost")
+3 → run_pareto_demo(...)
+4 → all three of the above, in that order
+anything else → prints "Invalid choice. Please choose 1, 2, 3, or 4."
+and returns (again, no re-prompt loop).
+
+main.py contains no pathfinding logic itself — every actual computation
+is delegated to tensor_builder, dijkstra_search, or pareto_search.
 ---
 
 ## `tests/test_project.py` — Automated Tests
