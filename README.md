@@ -97,14 +97,47 @@ The official entry point is `main.py`. Run it from the project root:
 python main.py
 ```
 
-You'll be prompted for:
-1. Whether to print the time/cost matrices and tensor shape first.
-2. A **start node** and a **destination node** (any of `A`–`J`).
-3. An **optimization mode**:
-   - `1` — fastest route (minimize time)
-   - `2` — cheapest route (minimize cost)
-   - `3` — Pareto-front routes (time **and** cost together)
-   - `4` — run all three and compare
+On startup, `main.py` always builds the time matrix, cost matrix, and the stacked tensor, and prints the tensor's shape. From there, you'll be walked through:
+
+
+1. **Show matrices?(y/n)** - optionally print the full time and cost matrices before continuing.
+2. **Available nodes** - the list of all valid node labels `(A–J)` is printed for reference.
+3. **Start node and destination node** - enter any two different labels from that list. If a node isn't recognized, or the start and destination are the same, the program prints an error and exits (it does not re-prompt. Re-run `python main.py` and try again).
+4. **Optimization mode:**
+    - 1 - fastest route (minimize time)
+    - 2 - cheapest route (minimize cost
+    - 3 - Pareto-front routes (time and cost together
+    - 4 - run all three and compare
+
+Example:
+```bash
+$ python main.py
+============================================================
+DSA FINAL GROUP PROJECT
+Multi-Objective Network Optimization
+============================================================
+
+Tensor successfully built.
+Tensor shape: (2, 10, 10)
+tensor[0] = time matrix
+tensor[1] = cost matrix
+
+Show time and cost matrices first? (y/n): n
+
+Available nodes:
+A, B, C, D, E, F, G, H, I, J
+
+Enter start node: A
+Enter destination node: J
+
+Choose optimization mode:
+1 - Fastest route using time
+2 - Cheapest route using cost
+3 - Pareto-front routes using time and cost
+4 - Run all and compare
+
+Enter choice: 4
+```
 
 Every module can also be run on its own to see a smaller, standalone demo of just that piece:
 
@@ -154,7 +187,7 @@ To reproduce what the project demonstrates:
 2. **Run the single-objective optimizer.** Run `python dijkstra_search.py` to see the fastest and cheapest `A -> J` routes.
 3. **Run the Pareto search.** Run `python pareto_search.py` to see the full multi-objective analysis (candidates, eliminated/dominated routes, and the final Pareto front), plus a plot of the objective space.
 4. **Compare with brute force.** Run `python ground_truth_generator.py` and check that its `best_by_time`, `best_by_cost`, and `pareto_front` match steps 2 and 3.
-5. **Observe it all together.** Run `python main.py`, choose mode `4` ("run all three and compare"), and pick a start/destination pair. You'll see the fastest route, the cheapest route, and the Pareto front side by side.
+5. **Observe it all together.** Run python `main.py`, choose mode 4 ("run all and compare"), and enter a valid start/destination pair from the printed node list (e.g. A and J). You'll see the fastest route, the cheapest route, and the Pareto front side by side. (Note: `main.py` exits immediately on an invalid node or matching start/destination rather than re-prompting, so double-check your entries.)
 6. **Verify automatically instead of by eye.** Run `pytest -v` and confirm all tests pass.
 
 ---
@@ -167,7 +200,7 @@ Short summaries below; see **`CODE_DOCUMENTATION.md`** for full function-by-func
 - **`dijkstra_search.py`** - Main single-objective algorithm. A hand-implemented Dijkstra (distance tracker, parent tracker, visited set, priority queue) that works on either the time or cost matrix.
 - **`pareto_search.py`** - Main multi-objective algorithm. Generates candidate routes, represents each as a `[time, cost]` vector via the `Route` class, and filters them by Pareto dominance.
 - **`ground_truth_generator.py`** - Testing utility only. Independent brute-force enumeration and comparison, used as an oracle in `tests/test_project.py`. Never imported by the two modules above.
-- **`main.py`** - The official entry point. Interactive CLI demo that wires the above modules together.
+- **`main.py`** -  The official entry point. Interactive CLI demo built from `show_available_nodes`, `format_path`, `run_dijkstra_demo`, and `run_pareto_demo`, wiring the algorithm modules together with no algorithm logic of its own. Validates node input and exits with an error message rather than re-prompting.
 - **`tests/test_project.py`** - Automated `pytest` suite.
 
 ---
