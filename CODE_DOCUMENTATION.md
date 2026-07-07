@@ -82,11 +82,11 @@ Builds the directed, dual-weighted network into matrix form. Pure data
 structure code; contains no pathfinding logic.
 
 ### Module-level data
-- **`INF`** — `float("inf")`. Used to represent "no direct edge" in a matrix
+- **`INF`** - `float("inf")`. Used to represent "no direct edge" in a matrix
   cell, as opposed to `0`, which is reserved for a node's distance to itself.
-- **`NODES`** — the fixed, ordered list `["A", ..., "J"]`. The list's index
+- **`NODES`** - the fixed, ordered list `["A", ..., "J"]`. The list's index
   order determines the row/column order of every matrix built from it.
-- **`EDGES`** — the fixed edge list as `(source, destination, time, cost)`
+- **`EDGES`** - the fixed edge list as `(source, destination, time, cost)`
   tuples, taken directly from the finalized network design.
 
 ### `build_node_index(nodes) -> dict[str, int]`
@@ -108,13 +108,13 @@ The core builder. For an N-node graph, returns two N×N `numpy` arrays:
 - The diagonal of both matrices is `0` (a node's "distance" to itself).
 
 Because the graph is **directed**, `matrix[i][j]` and `matrix[j][i]` are
-independent — an edge one way does not imply an edge the other way.
+independent - an edge one way does not imply an edge the other way.
 
 ### `build_tensor(time_matrix, cost_matrix) -> np.ndarray`
 Stacks the two matrices with `np.stack` into one `(2, N, N)` array, so
 `tensor[0]` is the time matrix and `tensor[1]` is the cost matrix. This is
-the literal "vector of objective values per edge" representation described
-in the project proposal — indexing `tensor[:, i, j]` gives the full
+the "vector of objective values per edge" representation described
+in the project proposal - indexing `tensor[:, i, j]` gives the full
 `[time, cost]` objective vector for edge `i -> j`.
 
 ### `get_neighbors(matrix, node, node_index, nodes=NODES) -> list[tuple[str, float]]`
@@ -128,10 +128,10 @@ Pretty-prints a matrix with a title/underline. Display-only, no return value.
 
 ---
 
-## `dijkstra_search.py` — Task 3: Single-Objective Optimizer (MAIN algorithm)
+## `dijkstra_search.py` - Single-Objective Optimizer (MAIN algorithm)
 
 Answers "what's the best route for *one* objective at a time?" The same
-function works for time or cost — the objective is determined entirely by
+function works for time or cost - the objective is determined entirely by
 which matrix you pass in.
 
 ### Module-level data
@@ -143,19 +143,19 @@ import time_matrix, cost_matrix, node_index` without rebuilding the graph.
 The primary algorithm. A manually implemented Dijkstra's algorithm using
 exactly the four components specified by the project plan:
 
-1. **`dist`** — a dict tracking the best known cost-so-far to reach each
+1. **`dist`** - a dict tracking the best known cost-so-far to reach each
    node, initialized to `inf` except the source (`0.0`).
-2. **`parent`** — a dict tracking which node we arrived from, used to
+2. **`parent`** - a dict tracking which node we arrived from, used to
    reconstruct the winning path at the end by walking backwards from the
    target.
-3. **`visited`** — a set of nodes whose shortest distance is finalized. Once
+3. **`visited`** - a set of nodes whose shortest distance is finalized. Once
    a node is popped from the queue and added here, it's never re-relaxed.
-4. **`pq`** — a binary min-heap (`heapq`) of `(cost_so_far, node)` pairs,
+4. **`pq`** - a binary min-heap (`heapq`) of `(cost_so_far, node)` pairs,
    always expanding the currently-cheapest frontier node next.
 
 **Algorithm flow:** pop the cheapest node off `pq`; if already visited, skip
 it (a node can be pushed multiple times with different candidate costs, and
-only the first pop — the cheapest — matters); otherwise mark it visited,
+only the first pop matters); otherwise mark it visited,
 check for early exit if it's the target, then "relax" each unvisited
 neighbor (if the path through the current node is cheaper than that
 neighbor's currently-known best, update `dist`/`parent` and push it onto the
@@ -177,7 +177,7 @@ convention) and re-zeroes the diagonal so self-loops aren't misread as edges.
 
 ---
 
-## `pareto_search.py` — Task 4: Multi-Objective Pareto Search (MAIN algorithm)
+## `pareto_search.py` - Multi-Objective Pareto Search (MAIN algorithm)
 
 **This is the primary multi-objective answer, not a validation step.**
 Answers "what are *all* the routes worth considering when both time and cost
