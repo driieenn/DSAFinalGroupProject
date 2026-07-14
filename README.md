@@ -10,7 +10,8 @@ This project implements algorithms for finding optimal routes through a directed
 
 On top of that representation, the project implements a **single-objective optimizer** (a hand-written Dijkstra-style shortest path algorithm that can minimize either time or cost) and a **multi-objective Pareto-front search** (which returns the full set of non-dominated time/cost trade-off routes instead of forcing everything into one score). Both optimized algorithms are compared against an independent **brute-force ground-truth generator**, which enumerates every possible route and is used *solely* for correctness testing, it is not part of the production algorithm.
 
-The official entry point for running the project is **main.py** (an interactive CLI demo). The original exploratory work - network design, visualization, and early testing, lives in the project notebook `LT6_DSA-2.ipynb`; the finalized, documented, and tested versions of that same logic are what live in the `.py` modules described below, and those `.py` modules are what should actually be run and graded.
+The official entry point for running the project is **main.py** (an interactive CLI demo). The original exploratory work - network design, visualization, and early testing - now lives in two notebooks under notebooks: **visual_demo.ipynb** (a visual walkthrough of the network and both algorithms) and **networkx_heatmap_benchmark.ipynb** (a NetworkX-based benchmark of the project's algorithms plus a heatmap visualization). The finalized, documented, and tested versions of that same logic are what live in the .py modules described below, and those .py modules are what should actually be run and graded. Superseded/earlier drafts of notebooks and modules are kept in **archive/** for reference only and are not part of the graded project.
+
 
 ---
 
@@ -37,8 +38,12 @@ The official entry point for running the project is **main.py** (an interactive 
 ├── pareto_search.py            # multi-objective Pareto-front search (MAIN algorithm)
 ├── ground_truth_generator.py   # TESTING UTILITY ONLY: independent brute-force checker
 ├── main.py                     # Official entry point — interactive demo runner (CLI)
-└── tests/
-    └── test_project.py         # pytest suite (unit tests + ground-truth cross-checks)
+├── notebooks/
+│   ├── visual_demo.ipynb                    # Visual demo of the network and both algorithms
+│   └── networkx_heatmap_benchmark.ipynb     # NetworkX benchmark + heatmap visualization
+├── tests/
+│   └── test_project.py         # pytest suite (unit tests + ground-truth cross-checks)
+└── archive/                    # Old/superseded files only 
 ```
 
 | File | Purpose |
@@ -48,7 +53,12 @@ The official entry point for running the project is **main.py** (an interactive 
 | `pareto_search.py` | **Main algorithm.** Generates all candidate routes and filters them down to the Pareto-optimal (non-dominated) set. |
 | `ground_truth_generator.py` | **Testing utility, not part of the main algorithm.** Brute-force enumerates every simple path and computes the "obviously correct" answer, used only to check the two modules above. |
 | `main.py` | The official entry point. Interactive CLI demo that wires the modules together contains no algorithm logic of its own. |
+| `notebooks/visual_demo.ipynb` | Visual demo notebook, walks through the network and both algorithms with plots. | 
+| `notebooks/networkx_heatmap_benchmark.ipynb` | Benchmarks the project's algorithms against NetworkX and produces a heatmap visualization. | 
 | `tests/test_project.py` | Automated `pytest` suite. |
+| ` archive/` | Old files only, kept for reference and not graded. |
+
+
 
 ---
 
@@ -62,7 +72,8 @@ The official entry point for running the project is **main.py** (an interactive 
 - networkx
 - pytest
 
-(pandas and networkx are used for the network visualization in the original exploratory notebook, `LT6_DSA-2.ipynb`; they are included here so that notebook still runs if you open it.)
+(pandas and networkx are used for the network visualization and benchmarking in notebooks/visual_demo.ipynb and notebooks/networkx_heatmap_benchmark.ipynb; they are included here so those notebooks still run if you open them.)
+
 
 ---
 
@@ -201,7 +212,10 @@ Short summaries below; see **`CODE_DOCUMENTATION.md`** for full function-by-func
 - **`pareto_search.py`** - Main multi-objective algorithm. Generates candidate routes, represents each as a `[time, cost]` vector via the `Route` class, and filters them by Pareto dominance.
 - **`ground_truth_generator.py`** - Testing utility only. Independent brute-force enumeration and comparison, used as an oracle in `tests/test_project.py`. Never imported by the two modules above.
 - **`main.py`** -  The official entry point. Interactive CLI demo built from `show_available_nodes`, `format_path`, `run_dijkstra_demo`, and `run_pareto_demo`, wiring the algorithm modules together with no algorithm logic of its own. Validates node input and exits with an error message rather than re-prompting.
+- **`notebooks/visual_demo.ipynb`** - Visual demo notebook that walks through the network and both algorithms with plots and narrative explanation.
+- **`notebooks/networkx_heatmap_benchmark.ipynb`** - Benchmarks the project's hand-written algorithms against NetworkX's built-in implementations and produces a heatmap visualization of the results.
 - **`tests/test_project.py`** - Automated `pytest` suite.
+- **`archive/`** - Old files only (earlier drafts of notebooks and modules). Not run or graded as part of the project.
 
 ---
 
