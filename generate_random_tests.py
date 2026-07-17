@@ -27,8 +27,7 @@ from pareto_search import pareto_search
 from tensor_builder import build_adjacency_matrices
 
 
-BRUTE_FORCE_NODE_LIMIT = 30
-PARETO_NODE_LIMIT = 100
+EXACT_ENUMERATION_NODE_LIMIT = 30
 
 
 @dataclass
@@ -142,7 +141,7 @@ def format_seconds(value: float | None) -> str:
 	return f"{value * 1000.0:.3f} ms"
 
 
-def benchmark_graph(graph_case: GraphCase) -> dict:
+def benchmark_graph(graph_case: GraphCase, exact_limit: int) -> dict:
 	time_matrix, cost_matrix, node_index = build_adjacency_matrices(graph_case.nodes, graph_case.edges)
 	source = graph_case.nodes[0]
 	destination = graph_case.nodes[-1]
@@ -175,11 +174,15 @@ def benchmark_graph(graph_case: GraphCase) -> dict:
 		"brute_force_time": None,
 		"pareto_routes": None,
 		"brute_force_routes": None,
-		"brute_force_status": "skipped",
-		"pareto_status": "skipped",
+		"validated": False,
 	}
 
-	if len(graph_case.nodes) <= PARETO_NODE_LIMIT:
+	if len(graph_case.nodes) <= exact_limit:
+		adjacency = build_adjacency_list(graph_case.nodes, graph_case.edges)
+
+		with patched_ground_truth_adjacency(adjacency):
+			brute_force_time, ground_truth = time_call(gtg.generate_ground_truth, source, destination)
+
 		pareto_time, pareto_result = time_call(
 			pareto_search,
 			time_matrix,
@@ -189,26 +192,23 @@ def benchmark_graph(graph_case: GraphCase) -> dict:
 			node_index,
 			graph_case.nodes,
 		)
-		result["pareto_status"] = "ok"
-		result["pareto_time"] = pareto_time
-		result["pareto_routes"] = len(pareto_result["pareto_front"])
-
-	if len(graph_case.nodes) <= BRUTE_FORCE_NODE_LIMIT:
-		adjacency = build_adjacency_list(graph_case.nodes, graph_case.edges)
-
-		with patched_ground_truth_adjacency(adjacency):
-			brute_force_time, ground_truth = time_call(gtg.generate_ground_truth, source, destination)
 
 		time_path, time_total = time_result
 		cost_path, cost_total = cost_result
 
 		assert time_path == ground_truth["best_by_time"]["path"]
 		assert cost_path == ground_truth["best_by_cost"]["path"]
+
+		actual_front = [route.to_dict() for route in pareto_result["pareto_front"]]
+		assert gtg.route_sets_match(actual_front, ground_truth["pareto_front"])
+
 		result.update(
 			{
+				"pareto_time": pareto_time,
 				"brute_force_time": brute_force_time,
+				"pareto_routes": len(pareto_result["pareto_front"]),
 				"brute_force_routes": len(ground_truth["pareto_front"]),
-				"brute_force_status": "ok",
+				"validated": True,
 				"dijkstra_time_total": time_total,
 				"dijkstra_cost_total": cost_total,
 			}
@@ -218,29 +218,26 @@ def benchmark_graph(graph_case: GraphCase) -> dict:
 
 
 def summarize_category(rows: list[dict]) -> dict:
-	pareto_rows = [row for row in rows if row["pareto_status"] == "ok"]
-	brute_force_rows = [row for row in rows if row["brute_force_status"] == "ok"]
+	exact_rows = [row for row in rows if row["validated"]]
 
 	return {
 		"graphs": len(rows),
 		"avg_nodes": mean(row["nodes"] for row in rows),
 		"avg_edges": mean(row["edges"] for row in rows),
 		"avg_dijkstra": mean(row["dijkstra_time"] + row["dijkstra_cost"] for row in rows) / 2.0,
-		"pareto_graphs": len(pareto_rows),
-		"brute_force_graphs": len(brute_force_rows),
-		"avg_pareto": mean(row["pareto_time"] for row in pareto_rows) if pareto_rows else None,
-		"avg_brute_force": mean(row["brute_force_time"] for row in brute_force_rows) if brute_force_rows else None,
+		"exact_graphs": len(exact_rows),
+		"avg_pareto": mean(row["pareto_time"] for row in exact_rows) if exact_rows else None,
+		"avg_brute_force": mean(row["brute_force_time"] for row in exact_rows) if exact_rows else None,
 	}
 
 
-def print_summary(results: dict[str, list[dict]]) -> None:
+def print_summary(results: dict[str, list[dict]], exact_limit: int) -> None:
 	print("Random Graph Benchmark")
-	print(f"Pareto node limit: {PARETO_NODE_LIMIT} nodes")
-	print(f"Brute force node limit: {BRUTE_FORCE_NODE_LIMIT} nodes")
+	print(f"Exact route enumeration limit: {exact_limit} nodes")
 	print("-" * 90)
 	print(
 		f"{'Category':<10} {'Graphs':>6} {'Avg nodes':>10} {'Avg edges':>10} "
-		f"{'Dijkstra':>12} {'Pareto':>12} {'Brute force':>14} {'Pareto ok':>9} {'BF ok':>7}"
+		f"{'Dijkstra':>12} {'Pareto':>12} {'Brute force':>14} {'Exact runs':>11}"
 	)
 	print("-" * 90)
 
@@ -249,25 +246,26 @@ def print_summary(results: dict[str, list[dict]]) -> None:
 		print(
 			f"{category:<10} {summary['graphs']:>6} {summary['avg_nodes']:>10.1f} {summary['avg_edges']:>10.1f} "
 			f"{format_seconds(summary['avg_dijkstra']):>12} {format_seconds(summary['avg_pareto']):>12} "
-			f"{format_seconds(summary['avg_brute_force']):>14} {summary['pareto_graphs']:>9} {summary['brute_force_graphs']:>7}"
+			f"{format_seconds(summary['avg_brute_force']):>14} {summary['exact_graphs']:>11}"
 		)
 
 	print("-" * 90)
 	print(
-		"Dijkstra is timed on every generated graph. Pareto runs on graphs up to the Pareto "
-		"node limit, while brute force is only attempted up to the brute-force node limit."
+		"Dijkstra is timed on every generated graph. Pareto-front search and brute force "
+		"are only executed on graphs with at most the exact-enumeration limit, because both "
+		"methods grow exponentially with the number of simple paths."
 	)
 
 
-def run_benchmarks(seed: int, small_count: int, medium_count: int, large_count: int) -> None:
+def run_benchmarks(seed: int, small_count: int, medium_count: int, large_count: int, exact_limit: int) -> None:
 	graph_suite = create_graph_suite(seed, small_count, medium_count, large_count)
 	categorized_results: dict[str, list[dict]] = {"small": [], "medium": [], "large": []}
 
 	for graph_case in graph_suite:
-		result = benchmark_graph(graph_case)
+		result = benchmark_graph(graph_case, exact_limit)
 		categorized_results[graph_case.category].append(result)
 
-	print_summary(categorized_results)
+	print_summary(categorized_results, exact_limit)
 
 
 def parse_args() -> argparse.Namespace:
@@ -275,13 +273,14 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument("--seed", type=int, default=2301, help="Random seed used for graph generation.")
 	parser.add_argument("--small-count", type=int, default=100, help="Number of small graphs to generate.")
 	parser.add_argument("--medium-count", type=int, default=50, help="Number of medium graphs to generate.")
-	parser.add_argument("--large-count", type=int, default=10, help="Number of large graphs to generate.")
+	parser.add_argument("--large-count", type=int, default=3, help="Number of large graphs to generate.")
+	parser.add_argument("--exact-limit", type=int, default=EXACT_ENUMERATION_NODE_LIMIT, help="Maximum node count for exact Pareto and brute-force benchmarking.")
 	return parser.parse_args()
 
 
 def main() -> None:
 	args = parse_args()
-	run_benchmarks(args.seed, args.small_count, args.medium_count, args.large_count)
+	run_benchmarks(args.seed, args.small_count, args.medium_count, args.large_count, args.exact_limit)
 
 
 if __name__ == "__main__":
