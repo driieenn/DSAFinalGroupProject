@@ -15,6 +15,7 @@ time_matrix, cost_matrix, node_index are already built from tensor_builder.NODES
 """
 
 from __future__ import annotations
+from dataclasses import dataclass
 import numpy as np
 import heapq
 from itertools import combinations
@@ -69,6 +70,20 @@ class Route:
         }
 
 
+@dataclass(frozen=True)
+class SearchState:
+    """Internal search label used while pruning dominated partial routes."""
+
+    node_idx: int
+    path: tuple[str, ...]
+    time: float
+    cost: float
+    visited: frozenset[int]
+
+    def to_route(self) -> Route:
+        return Route(list(self.path), self.time, self.cost)
+
+
 # section 3 - candidate route generation
 def generate_candidate_routes(
     time_matrix: np.ndarray,
@@ -79,13 +94,15 @@ def generate_candidate_routes(
     nodes: list[str] = NODES,
 ) -> list[Route]:
     """
-    Generates all simple paths from source to destination via iterative DFS.
+    Generates candidate routes using dominance-pruned label-setting search.
 
-    Each discovered path is converted into a Route object with a [time, cost]
-    objective vector. Self-loops and revisited nodes are excluded.
+    The traversal keeps a non-dominated label set for each node. A new partial
+    route is discarded as soon as another partial route to the same node is no
+    worse in both objectives and strictly better in at least one, with a
+    visited-set subset check to keep the pruning safe for simple-path search.
 
     Returns:
-        List of Route objects -- one per simple path found.
+        List of Route objects discovered for the destination node.
     """
     if source not in node_index:
         raise ValueError(f"Source node '{source}' not found.")
@@ -98,36 +115,77 @@ def generate_candidate_routes(
     src_idx = node_index[source]
     dst_idx = node_index[destination]
     n = len(nodes)
-    routes = []
 
-    stack = [(src_idx, frozenset([src_idx]), 0.0, 0.0, [source])]
+    def dominates_state(label_a: SearchState, label_b: SearchState) -> bool:
+        """True if label_a safely dominates label_b for the same node."""
+        return (
+            label_a.node_idx == label_b.node_idx
+            and label_a.visited.issubset(label_b.visited)
+            and label_a.time <= label_b.time
+            and label_a.cost <= label_b.cost
+            and (label_a.time < label_b.time or label_a.cost < label_b.cost)
+        )
+
+    def is_dominated_by_existing(
+        candidate: SearchState,
+        labels: list[SearchState],
+    ) -> bool:
+        return any(dominates_state(existing, candidate) for existing in labels)
+
+    labels_by_node: dict[int, list[SearchState]] = {i: [] for i in range(n)}
+    completed_routes: list[Route] = []
+
+    initial_state = SearchState(
+        node_idx=src_idx,
+        path=(source,),
+        time=0.0,
+        cost=0.0,
+        visited=frozenset({src_idx}),
+    )
+    labels_by_node[src_idx].append(initial_state)
+
+    stack = [initial_state]
 
     while stack:
-        curr_idx, visited, cum_time, cum_cost, path = stack.pop()
+        state = stack.pop()
 
-        if curr_idx == dst_idx:
-            routes.append(Route(path[:], cum_time, cum_cost))
+        # Skip labels that were already removed by a later dominating label.
+        if state not in labels_by_node[state.node_idx]:
+            continue
+
+        if state.node_idx == dst_idx:
+            completed_routes.append(state.to_route())
             continue
 
         for neighbor_idx in range(n):
-            t = time_matrix[curr_idx][neighbor_idx]
-            c = cost_matrix[curr_idx][neighbor_idx]
+            t = time_matrix[state.node_idx][neighbor_idx]
+            c = cost_matrix[state.node_idx][neighbor_idx]
 
             # if no edge, self-loop, or already visited
             if t == INF or t == 0:
                 continue
-            if neighbor_idx in visited:
+            if neighbor_idx in state.visited:
                 continue
 
-            stack.append((
-                neighbor_idx,
-                visited | frozenset([neighbor_idx]),
-                cum_time + t,
-                cum_cost + c,
-                path + [index_to_node[neighbor_idx]],
-            ))
+            next_state = SearchState(
+                node_idx=neighbor_idx,
+                path=state.path + (index_to_node[neighbor_idx],),
+                time=state.time + float(t),
+                cost=state.cost + float(c),
+                visited=state.visited | frozenset({neighbor_idx}),
+            )
 
-    return routes
+            labels = labels_by_node[neighbor_idx]
+            if is_dominated_by_existing(next_state, labels):
+                continue
+
+            labels_by_node[neighbor_idx] = [
+                label for label in labels if not dominates_state(next_state, label)
+            ]
+            labels_by_node[neighbor_idx].append(next_state)
+            stack.append(next_state)
+
+    return completed_routes
 
 
 # section 4 - pareto dominance
